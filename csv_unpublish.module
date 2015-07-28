@@ -6,10 +6,17 @@
 function csv_unpublish_menu() {
 
   $items['admin/config/content/csv_unpublish'] = array(
-    'title'             => 'Custom Unpublish',
+    'title'             => 'CSV Unpublish',
     'description'       => 'Unpublish multiple nodes by NID',
     'page callback'     => 'drupal_get_form',
     'page arguments'    => array('csv_unpublish_settings_form'),
+    'access arguments'  => array('administer site configuration'),
+  );
+  $items['admin/config/content/csv_unpublish/confirm/%'] = array(
+    'title'             => 'Confirm CSV Unpublish',
+    'description'       => 'Unpublish multiple nodes by NID',
+    'page callback'     => 'drupal_get_form',
+    'page arguments'    => array('csv_unpublish_confirm_form', 5),
     'access arguments'  => array('administer site configuration'),
   );
 
@@ -19,13 +26,27 @@ function csv_unpublish_menu() {
 /**
  * Implements custom hook_form().
  */
-function csv_unpublish_settings_form() {
+function csv_unpublish_settings_form($form, &$form_state) {
 
   $form['csv_unpublish_file'] = array(
     '#type'         => 'file',
     '#title'        => 'Upload CSV',
     '#description'  => t('Upload a CSV formatted to hold one NID per line, no commas or else.'),
   );
+  $form['csv_unpublish_upload'] = array(
+    '#type'         => 'submit',
+    '#value'        => 'Upload',
+  );
+  $form['#submit'][] = 'csv_unpublish_upload_submit';
+  // $form['#validate'][] = 'csv_unpublish_upload_validate';
+  
+  return $form;
+}
+
+/**
+ * Implements custom hook_form().
+ */
+function csv_unpublish_confirm_form($form, &$form_state, $fid) {
 
   $form['csv_unpublish_options'] = array(
     '#type'           => 'radios',
@@ -34,12 +55,30 @@ function csv_unpublish_settings_form() {
     '#default_value'  => 0,
   );
 
-  $form = system_settings_form($form);
+  // now read from it
+  $file = file_load($fid);
+  $realpath = drupal_realpath($file->uri);
+  // drupal_set_message('The real path of the file is $realpath');
+  $fh = fopen($realpath, 'r');
 
-  // TO DO add confirm
-  $form['#validate'][] = 'csv_unpublish_form_validate';
-  $form['#submit'][] = 'csv_unpublish_form_submit';
-  
+  while(($row = fgetcsv($fh, NULL,';')) !== FALSE){
+    foreach($row as $nid) {
+      if ($node = node_load($nid)) {
+        $form[$nid] = array(
+          '#prefix' => '<div>',
+          '#markup' => $nid . ' ' . $node->title,
+          '#suffix' => '</div>',
+        );
+      }
+    }
+  }
+
+  $form['csv_unpublish_confirm'] = array(
+    '#type'         => 'submit',
+    '#value'        => 'Save',
+  );
+  dpm($form);
+  $form['#submit'][] = 'csv_unpublish_confirm_submit';
   return $form;
 }
 
@@ -47,17 +86,15 @@ function csv_unpublish_settings_form() {
  * Validate handler for the custom form
  */
 function csv_unpublish_form_validate($form, &$form_state) {
-
   form_set_error('error', 'Halt!');
-
 }
 
 /**
  * Submit handler for the custom form.
  */
-function csv_unpublish_form_submit($form, &$form_state) {
+function csv_unpublish_upload_submit($form, &$form_state) {
 
-  // create a csv upload directory in sites/default/files if it doesn't exist yet
+  // create a CSV upload directory in sites/default/files if it doesn't exist yet
   $filepath = 'public://csvuploads';
   file_prepare_directory($filepath, FILE_CREATE_DIRECTORY);
 
@@ -65,14 +102,5 @@ function csv_unpublish_form_submit($form, &$form_state) {
   $file = file_save_upload('csv_unpublish_file', array('file_validate_extensions' => array('CSV')), $filepath, FILE_EXISTS_REPLACE);
   drupal_set_message('The file you have uploaded is: <pre>'.print_r($file, TRUE).'</pre>');
 
-  // now read from it
-  $realpath = drupal_realpath($file->uri);
-  drupal_set_message('The real path of the file is $realpath');
-  $fh = fopen($realpath, 'r');
-
-  while(($row = fgetcsv($fh, NULL,';')) !== FALSE){
-    foreach($row as $field) {
-      dpm($field);
-    }
-  }
+  $form_state['redirect'] = 'admin/config/content/csv_unpublish/confirm/' . $file->fid;
 }
