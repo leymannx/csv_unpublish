@@ -1,0 +1,78 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function csv_unpublish_menu() {
+
+  $items['admin/config/content/csv_unpublish'] = array(
+    'title'             => 'Custom Unpublish',
+    'description'       => 'Unpublish multiple nodes by NID',
+    'page callback'     => 'drupal_get_form',
+    'page arguments'    => array('csv_unpublish_settings_form'),
+    'access arguments'  => array('administer site configuration'),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements custom hook_form().
+ */
+function csv_unpublish_settings_form() {
+
+  $form['csv_unpublish_file'] = array(
+    '#type'         => 'file',
+    '#title'        => 'Upload CSV',
+    '#description'  => t('Upload a CSV formatted to hold one NID per line, no commas or else.'),
+  );
+
+  $form['csv_unpublish_options'] = array(
+    '#type'           => 'radios',
+    '#title'          => 'Choose operation',
+    '#options'        => array(0 => 'unpublish', 1 => 'publish'),
+    '#default_value'  => 0,
+  );
+
+  $form = system_settings_form($form);
+
+  // TO DO add confirm
+  $form['#validate'][] = 'csv_unpublish_form_validate';
+  $form['#submit'][] = 'csv_unpublish_form_submit';
+  
+  return $form;
+}
+
+/**
+ * Validate handler for the custom form
+ */
+function csv_unpublish_form_validate($form, &$form_state) {
+
+  form_set_error('error', 'Halt!');
+
+}
+
+/**
+ * Submit handler for the custom form.
+ */
+function csv_unpublish_form_submit($form, &$form_state) {
+
+  // create a csv upload directory in sites/default/files if it doesn't exist yet
+  $filepath = 'public://csvuploads';
+  file_prepare_directory($filepath, FILE_CREATE_DIRECTORY);
+
+  // save the uploaded file
+  $file = file_save_upload('csv_unpublish_file', array('file_validate_extensions' => array('CSV')), $filepath, FILE_EXISTS_REPLACE);
+  drupal_set_message('The file you have uploaded is: <pre>'.print_r($file, TRUE).'</pre>');
+
+  // now read from it
+  $realpath = drupal_realpath($file->uri);
+  drupal_set_message('The real path of the file is $realpath');
+  $fh = fopen($realpath, 'r');
+
+  while(($row = fgetcsv($fh, NULL,';')) !== FALSE){
+    foreach($row as $field) {
+      dpm($field);
+    }
+  }
+}

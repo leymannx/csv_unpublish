@@ -1,0 +1,5 @@
+name = CSV Unpublish
+description = Retrieve multiple NIDs from an uploaded CSV to publish or unpublish multiple nodes at once.
+core = 7.x
+package = Custom
+configure = admin/config/content/csv_unpublish
