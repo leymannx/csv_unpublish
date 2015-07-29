@@ -13,7 +13,7 @@ function csv_unpublish_menu() {
     'access arguments'  => array('administer site configuration'),
   );
   $items['admin/config/content/csv_unpublish/confirm/%'] = array(
-    'title'             => 'Confirm CSV Unpublish',
+    'title'             => 'CSV Unpublish Confirm',
     'description'       => 'Unpublish multiple nodes by NID',
     'page callback'     => 'drupal_get_form',
     'page arguments'    => array('csv_unpublish_confirm_form', 5),
@@ -43,51 +43,12 @@ function csv_unpublish_settings_form($form, &$form_state) {
   return $form;
 }
 
-/**
- * Implements custom hook_form().
- */
-function csv_unpublish_confirm_form($form, &$form_state, $fid) {
-
-  $form['csv_unpublish_options'] = array(
-    '#type'           => 'radios',
-    '#title'          => 'Choose operation',
-    '#options'        => array(0 => 'unpublish', 1 => 'publish'),
-    '#default_value'  => 0,
-  );
-
-  // now read from it
-  $file = file_load($fid);
-  $realpath = drupal_realpath($file->uri);
-  // drupal_set_message('The real path of the file is $realpath');
-  $fh = fopen($realpath, 'r');
-
-  while(($row = fgetcsv($fh, NULL,';')) !== FALSE){
-    foreach($row as $nid) {
-      if ($node = node_load($nid)) {
-        $form[$nid] = array(
-          '#prefix' => '<div>',
-          '#markup' => $nid . ' ' . $node->title,
-          '#suffix' => '</div>',
-        );
-      }
-    }
-  }
-
-  $form['csv_unpublish_confirm'] = array(
-    '#type'         => 'submit',
-    '#value'        => 'Save',
-  );
-  dpm($form);
-  $form['#submit'][] = 'csv_unpublish_confirm_submit';
-  return $form;
-}
-
-/**
- * Validate handler for the custom form
- */
-function csv_unpublish_form_validate($form, &$form_state) {
-  form_set_error('error', 'Halt!');
-}
+// /**
+//  * Validate handler for the custom form
+//  */
+// function csv_unpublish_upload_validate($form, &$form_state) {
+//   form_set_error('error', 'Halt!');
+// }
 
 /**
  * Submit handler for the custom form.
@@ -99,8 +60,94 @@ function csv_unpublish_upload_submit($form, &$form_state) {
   file_prepare_directory($filepath, FILE_CREATE_DIRECTORY);
 
   // save the uploaded file
-  $file = file_save_upload('csv_unpublish_file', array('file_validate_extensions' => array('CSV')), $filepath, FILE_EXISTS_REPLACE);
-  drupal_set_message('The file you have uploaded is: <pre>'.print_r($file, TRUE).'</pre>');
+  $validators = array('file_validate_extensions' => array('CSV'));
+  $file = file_save_upload('csv_unpublish_file', $validators, $filepath, FILE_EXISTS_REPLACE);
+  // drupal_set_message('The file you have uploaded is: <pre>'.print_r($file, TRUE).'</pre>');
 
-  $form_state['redirect'] = 'admin/config/content/csv_unpublish/confirm/' . $file->fid;
+  // redirect user after successfull file upload to next step by appending FID as wildcard to URL
+  if ($file) {
+    $form_state['redirect'] = 'admin/config/content/csv_unpublish/confirm/' . $file->fid;
+  }
 }
+
+/**
+ * Implements custom hook_form().
+ */
+function csv_unpublish_confirm_form($form, &$form_state, $fid) {
+
+  if ($file = file_load($fid)) {
+
+    if ($file->filemime == 'text/csv') {
+
+      $form['csv_unpublish_option'] = array(
+        '#type'           => 'radios',
+        '#title'          => 'What do you want to do with the following nodes?',
+        '#options'        => array(0 => 'unpublish', 1 => 'publish'),
+        '#default_value'  => 0,
+      );
+      $form['csv_unpublish_confirm'] = array(
+        '#type'         => 'submit',
+        '#value'        => 'Save',
+      );
+
+      // now read from it
+      $realpath = drupal_realpath($file->uri);
+      // drupal_set_message('The real path of the file is $realpath');
+      $fh = fopen($realpath, 'r');
+
+      while (($row = fgetcsv($fh, NULL,';')) !== FALSE) {
+        foreach ($row as $nid) {
+          if ($node = node_load($nid)) {
+            $form['queue'][$nid] = array(
+              '#prefix' => '<div>',
+              '#markup' => $nid . ' ' . $node->title . ' (' . _node_status($node->status) . ')',
+              '#suffix' => '</div>',
+            );
+          }
+        }
+      }
+
+    } else {
+      form_set_error('error', 'Wrong file extension');
+    }
+  } else {
+    form_set_error('error', 'File does not exist');
+  }
+
+  $form['#submit'][] = 'csv_unpublish_confirm_submit';
+  return $form;
+}
+
+/**
+ * Submit handler for the custom confirmation form.
+ */
+function csv_unpublish_confirm_submit($form, &$form_state) {
+
+  // Load all nodes in one go for better performance.
+  $nodes = node_load_multiple(array_keys($form_state['complete form']['queue']));
+  $i = 0;
+
+  foreach ($nodes as $node) {
+    $i++;
+    // set status property (0 for unpublishing, 1 for publishing)
+    $node->status = $form_state['values']['csv_unpublish_option'];
+    // re-save the node
+    node_save($node);
+
+    // drupal_set_message(_node_status($node->status) . ' ' . $node->nid, 'status', FALSE);
+  }
+  
+  // drupal_set_message('Saved ' . $i . ' nodes.', 'status');
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Helper function to translate the node status to a string
+ */
+function _node_status($status) {
+  if ($status == 1) {
+    return 'published';
+  } elseif ($status == 0) {
+    return 'unpublished';
+  }
+} 
